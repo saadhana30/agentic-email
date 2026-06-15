@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NovaSphere Agent — Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <div id="notification-container"></div>
+
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-text">NovaSphere Agent</span>
+    </div>
+    <nav>
+      <a class="nav-link active" onclick="showTab('inbox', this)">Inbox</a>
+      <a class="nav-link" onclick="showTab('executed', this)">Executed <span id="executed-badge" class="badge"></span></a>
+      <a class="nav-link" onclick="showTab('review', this)">Review Queue <span id="review-badge" class="badge"></span></a>
+      <a class="nav-link" onclick="showTab('clients', this)">Clients</a>
+    </nav>
+    <div class="stats-panel" id="stats-panel"></div>
+  </aside>
+
+  <main class="content">
+
+    <!-- INBOX TAB -->
+    <section id="tab-inbox" class="tab active">
+      <div class="page-header">
+        <h1 class="page-title">Inbox</h1>
+        <div class="toolbar">
+          <div class="filter-tabs" id="inbox-filter-tabs">
+            <button class="filter-btn active" onclick="setInboxFilter('all', this)">All</button>
+            <button class="filter-btn" onclick="setInboxFilter('client', this)">Clients</button>
+            <button class="filter-btn" onclick="setInboxFilter('other', this)">Others</button>
+            <button class="filter-btn" onclick="setInboxFilter('spam', this)">Spam</button>
+          </div>
+          <select id="inbox-sort" onchange="loadInbox()">
+            <option value="newest">Latest to Oldest</option>
+            <option value="oldest">Oldest to Latest</option>
+          </select>
+        </div>
+      </div>
+      <p class="subtitle">All received emails, classified by source.</p>
+      <div id="email-list" class="card-list">Loading...</div>
+    </section>
+
+    <!-- EMAIL DETAIL PANEL -->
+    <section id="email-detail" class="email-detail hidden">
+      <button class="btn-back" onclick="closeDetail()">← Back</button>
+      <div id="detail-content"></div>
+    </section>
+
+    <!-- EXECUTED TAB -->
+    <section id="tab-executed" class="tab">
+      <div class="page-header">
+        <h1 class="page-title">Executed Actions</h1>
+        <div class="toolbar">
+          <select id="executed-sort" onchange="loadExecuted()">
+            <option value="newest">Latest to Oldest</option>
+            <option value="oldest">Oldest to Latest</option>
+          </select>
+        </div>
+      </div>
+      <p class="subtitle">Emails where agents have taken action. Click View Actions to see details.</p>
+      <div id="executed-list" class="card-list">Loading...</div>
+    </section>
+
+    <!-- EXECUTED DETAIL PANEL -->
+    <section id="executed-detail" class="email-detail hidden">
+      <button class="btn-back" onclick="closeExecutedDetail()">← Back</button>
+      <div id="executed-detail-content"></div>
+    </section>
+
+    <!-- REVIEW QUEUE TAB -->
+    <section id="tab-review" class="tab">
+      <div class="page-header">
+        <h1 class="page-title">Review Queue</h1>
+      </div>
+      <p class="subtitle">AI confidence was below threshold. Approve or reject to continue processing.</p>
+      <div id="review-list" class="card-list">Loading...</div>
+    </section>
+
+    <!-- CLIENTS TAB -->
+    <section id="tab-clients" class="tab">
+      <div class="page-header">
+        <h1 class="page-title">Client Management</h1>
+      </div>
+      <form id="add-client-form" class="form-card">
+        <h3>Add New Client</h3>
+        <input type="text" id="client-name" placeholder="Client Name" required />
+        <input type="text" id="client-domain" placeholder="Email Domain (e.g. clienta.com)" required />
+        <input type="text" id="client-jira" placeholder="Jira Project Key (e.g. CLTA)" required />
+        <button type="submit" class="btn-primary">Add Client</button>
+      </form>
+      <div id="client-list" class="card-list"></div>
+    </section>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
