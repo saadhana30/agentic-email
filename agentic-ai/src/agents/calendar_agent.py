@@ -17,6 +17,7 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from src.tools.ollama_client import call_ollama
 from src.config import GOOGLE_TOKEN_FILE, GMAIL_SCOPES, MAX_RETRIES, RETRY_DELAY_SECONDS, CALENDAR_TIMEZONE
+from src.utils.time_utils import format_datetime_ist
 from src.graph.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -167,12 +168,12 @@ class CalendarAgent:
 
         event = {
             "summary": preferences.get("meeting_title", f"Meeting with {client_name}"),
-            "description": (
-                f"Scheduled by ClientMail AI\n"
-                f"Client: {client_name}\n"
-                f"Original request: {email.get('subject', '')}\n"
-                f"{preferences.get('notes', '')}"
-            ),
+                "description": (
+                    f"Scheduled by NovaSphere Agent\n"
+                    f"Client: {client_name}\n"
+                    f"Original request: {email.get('subject', '')}\n"
+                    f"{preferences.get('notes', '')}"
+                ),
             # Use local timezone string — calendar shows correct time
             "start": {"dateTime": slot.isoformat(), "timeZone": CALENDAR_TIMEZONE},
             "end":   {"dateTime": (slot + timedelta(minutes=duration)).isoformat(), "timeZone": CALENDAR_TIMEZONE},
@@ -192,7 +193,7 @@ class CalendarAgent:
                     "status": "success",
                     "event_id": created.get("id"),
                     "event_link": created.get("htmlLink"),
-                    "slot": slot.strftime("%d %b %Y %I:%M %p IST"),
+                    "slot": format_datetime_ist(slot, "%d %b %Y %I:%M %p %Z"),
                     "rescheduled": preferred_was_unavailable,
                 }
             except Exception as e:

@@ -32,10 +32,24 @@ DATABASE_URL = "sqlite:///" + str(PROJECT_ROOT / os.getenv("DATABASE_URL", "agen
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
-# Retry settings
+# Retry settings (Jira/Calendar API retries)
 MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 3
+
+# Ollama retry settings — exponential backoff: 1s, 2s, 4s
+OLLAMA_MAX_RETRIES = 3
+OLLAMA_RETRY_BASE_DELAY = 1  # seconds — doubles each retry
 
 # Timezone — set to your local timezone for calendar events
 # Examples: "Asia/Kolkata", "America/New_York", "Europe/London", "UTC"
 CALENDAR_TIMEZONE = os.getenv("CALENDAR_TIMEZONE", "Asia/Kolkata")
+
+# Logs directory
+LOGS_DIR = PROJECT_ROOT / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+
+# JWT Auth
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-secret-in-production-use-a-long-random-string")
+JWT_ALGORITHM = "HS256"
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))

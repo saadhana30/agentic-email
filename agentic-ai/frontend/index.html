@@ -16,11 +16,16 @@
     </div>
     <nav>
       <a class="nav-link active" onclick="showTab('inbox', this)">Inbox</a>
-      <a class="nav-link" onclick="showTab('executed', this)">Executed <span id="executed-badge" class="badge"></span></a>
-      <a class="nav-link" onclick="showTab('review', this)">Review Queue <span id="review-badge" class="badge"></span></a>
+      <a class="nav-link" onclick="showTab('executed', this)">
+        Executed <span id="executed-badge" class="badge"></span>
+      </a>
+      <a class="nav-link" onclick="showTab('review', this)">
+        Review Queue <span id="review-badge" class="badge"></span>
+      </a>
       <a class="nav-link" onclick="showTab('clients', this)">Clients</a>
     </nav>
     <div class="stats-panel" id="stats-panel"></div>
+    <div id="user-header" class="user-header"></div>
   </aside>
 
   <main class="content">
@@ -63,7 +68,9 @@
           </select>
         </div>
       </div>
-      <p class="subtitle">Emails where agents have taken action. Click View Actions to see details.</p>
+      <p class="subtitle">
+        Emails where agents have taken action. Click View Actions to see details.
+      </p>
       <div id="executed-list" class="card-list">Loading...</div>
     </section>
 
@@ -78,7 +85,9 @@
       <div class="page-header">
         <h1 class="page-title">Review Queue</h1>
       </div>
-      <p class="subtitle">AI confidence was below threshold. Approve or reject to continue processing.</p>
+      <p class="subtitle">
+        AI confidence was below threshold. Approve or reject to continue processing.
+      </p>
       <div id="review-list" class="card-list">Loading...</div>
     </section>
 
@@ -89,9 +98,9 @@
       </div>
       <form id="add-client-form" class="form-card">
         <h3>Add New Client</h3>
-        <input type="text" id="client-name" placeholder="Client Name" required />
+        <input type="text" id="client-name"   placeholder="Client Name" required />
         <input type="text" id="client-domain" placeholder="Email Domain (e.g. clienta.com)" required />
-        <input type="text" id="client-jira" placeholder="Jira Project Key (e.g. CLTA)" required />
+        <input type="text" id="client-jira"   placeholder="Jira Project Key (e.g. CLTA)" required />
         <button type="submit" class="btn-primary">Add Client</button>
       </form>
       <div id="client-list" class="card-list"></div>
@@ -100,5 +109,6 @@
   </main>
 
   <script src="/static/app.js"></script>
+  <script src="/static/nova.js"></script>
 </body>
 </html>
