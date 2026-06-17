@@ -20,7 +20,8 @@ google-api-python-client==2.131.0
 
 # ── LangGraph ─────────────────────────────────────────────────────────────────
 langgraph==0.1.19
-langchain-core==0.2.22
+langgraph-checkpoint==1.0.12
+langgraph-checkpoint-sqlite==1.0.3
 
 # ── HTTP client ───────────────────────────────────────────────────────────────
 requests==2.32.3
@@ -35,3 +36,4 @@ Pillow==10.3.0
 
 # ── Config ────────────────────────────────────────────────────────────────────
 python-dotenv==1.0.1
+

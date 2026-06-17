@@ -79,20 +79,90 @@ def _review_queue(state: AgentState) -> AgentState:
         return review_queue_node(state)
 
 def _jira_status_agent(state: AgentState) -> AgentState:
+    # Ensure this agent is intended to run and hasn't already executed
+    if "jira_status_agent" not in state.get("next_agents", []):
+        return state
+    if "jira_status_agent" in state.get("executed_agents", []):
+        return state
+
     with trace_node("jira_status_agent", state):
-        return jira_status_agent.run(state)
+        state = jira_status_agent.run(state)
+
+    executed = state.get("executed_agents", [])
+    if "jira_status_agent" not in executed:
+        executed.append("jira_status_agent")
+    state["executed_agents"] = executed
+
+    # Remove from next_agents to avoid re-execution
+    na = state.get("next_agents", [])
+    if "jira_status_agent" in na:
+        na = [a for a in na if a != "jira_status_agent"]
+        state["next_agents"] = na
+
+    return state
 
 def _jira_agent(state: AgentState) -> AgentState:
+    if "jira_agent" not in state.get("next_agents", []):
+        return state
+    if "jira_agent" in state.get("executed_agents", []):
+        return state
+
     with trace_node("jira_agent", state):
-        return jira_agent.run(state)
+        state = jira_agent.run(state)
+
+    executed = state.get("executed_agents", [])
+    if "jira_agent" not in executed:
+        executed.append("jira_agent")
+    state["executed_agents"] = executed
+
+    na = state.get("next_agents", [])
+    if "jira_agent" in na:
+        na = [a for a in na if a != "jira_agent"]
+        state["next_agents"] = na
+
+    return state
 
 def _calendar_agent(state: AgentState) -> AgentState:
+    if "calendar_agent" not in state.get("next_agents", []):
+        return state
+    if "calendar_agent" in state.get("executed_agents", []):
+        return state
+
     with trace_node("calendar_agent", state):
-        return calendar_agent.run(state)
+        state = calendar_agent.run(state)
+
+    executed = state.get("executed_agents", [])
+    if "calendar_agent" not in executed:
+        executed.append("calendar_agent")
+    state["executed_agents"] = executed
+
+    na = state.get("next_agents", [])
+    if "calendar_agent" in na:
+        na = [a for a in na if a != "calendar_agent"]
+        state["next_agents"] = na
+
+    return state
 
 def _reply_agent(state: AgentState) -> AgentState:
+    if "reply_agent" not in state.get("next_agents", []):
+        return state
+    if "reply_agent" in state.get("executed_agents", []):
+        return state
+
     with trace_node("reply_agent", state):
-        return reply_agent.run(state)
+        state = reply_agent.run(state)
+
+    executed = state.get("executed_agents", [])
+    if "reply_agent" not in executed:
+        executed.append("reply_agent")
+    state["executed_agents"] = executed
+
+    na = state.get("next_agents", [])
+    if "reply_agent" in na:
+        na = [a for a in na if a != "reply_agent"]
+        state["next_agents"] = na
+
+    return state
 
 def _notification(state: AgentState) -> AgentState:
     with trace_node("notification", state):
@@ -250,6 +320,7 @@ def run_graph_for_email(email: dict) -> AgentState:
         "analysis":            {},
         "route":               "",
         "next_agents":         [],
+        "executed_agents":     [],
         "actions_taken":       [],
         "calendar_rescheduled": False,
         "proposed_slot":       None,

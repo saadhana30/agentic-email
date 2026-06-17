@@ -111,7 +111,9 @@ class JiraAgent:
             url = f"{self.base_url}/rest/api/3/user/assignable/search"
             params = {"project": project_key, "maxResults": 20}
             r = requests.get(url, params=params, auth=self.auth, headers=self.headers, timeout=10)
-            r.raise_for_status()
+            if not r.ok:
+                logger.warning(f"JiraAgent: failed to fetch project members — status={r.status_code} text={r.text}")
+                return []
             users = r.json()
             members = [
                 {
@@ -169,7 +171,17 @@ class JiraAgent:
             }
 
     def _create_issue(self, project_key: str, email: dict, details: dict) -> dict:
-        """Create Jira issue and assign to chosen team member."""
+        """Create Jira issue (minimal fields) then attempt to assign separately.
+
+        Creation does NOT include assignee, priority or labels to avoid whole-request rejection
+        when a single field is invalid. Assignment is attempted after successful creation.
+        """
+        # Normalize issue type and ensure a safe fallback
+        raw_type = (details.get("issue_type") or "").strip()
+        issue_type = raw_type.title() if raw_type else "Task"
+        if issue_type not in {"Bug", "Task", "Story"}:
+            issue_type = "Task"
+
         payload = {
             "fields": {
                 "project": {"key": project_key},
@@ -188,40 +200,85 @@ class JiraAgent:
                         }
                     ]
                 },
-                "issuetype": {"name": details.get("issue_type", "Task")},
-                "priority": {"name": details.get("priority", "Medium")},
-                "labels": ["agentic-ai", details.get("team_label", "support")],
+                "issuetype": {"name": issue_type},
             }
         }
 
-        # Assign to team member if LLM picked one
-        assignee_id = details.get("assignee_account_id")
-        if assignee_id:
-            payload["fields"]["assignee"] = {"accountId": assignee_id}
-
         url = f"{self.base_url}/rest/api/3/issue"
 
+        # Attempt creation with retries and improved error logging
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = requests.post(
                     url, json=payload,
                     auth=self.auth, headers=self.headers, timeout=10
                 )
-                response.raise_for_status()
-                data = response.json()
-                issue_key = data.get("key")
-                logger.info(f"JiraAgent: issue created — {issue_key}, assigned to {details.get('assignee_name')}")
-                return {
-                    "status": "success",
-                    "issue_key": issue_key,
-                    "issue_url": f"{self.base_url}/browse/{issue_key}",
-                    "assignee": details.get("assignee_name", "Unassigned"),
-                    "team": details.get("team_label"),
-                    "issue_type": details.get("issue_type"),
-                }
             except requests.RequestException as e:
-                logger.warning(f"JiraAgent: attempt {attempt + 1} failed — {e}")
+                logger.warning(f"JiraAgent: attempt {attempt + 1} failed (network) — {e}")
                 if attempt < MAX_RETRIES:
                     time.sleep(RETRY_DELAY_SECONDS)
+                    continue
+                return {"status": "failed", "error": str(e)}
+
+            if not response.ok:
+                logger.warning(
+                    f"JiraAgent: issue creation failed — status={response.status_code} text={response.text}"
+                )
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY_SECONDS)
+                    continue
+                return {"status": "failed", "error": f"creation failed: {response.status_code}", "details": response.text}
+
+            # Success: issue created
+            try:
+                data = response.json()
+            except Exception:
+                data = {}
+            issue_key = data.get("key")
+            if not issue_key:
+                logger.warning(f"JiraAgent: no issue key returned after creation: {data}")
+                return {"status": "failed", "error": "no_issue_key", "details": data}
+
+            # Now attempt assignment separately
+            assignee_id = details.get("assignee_account_id")
+            assignee_name = "Unassigned"
+            if assignee_id:
+                assign_ok = self._assign_issue(issue_key, assignee_id, details.get("assignee_name"))
+                if assign_ok:
+                    assignee_name = details.get("assignee_name", "Unassigned")
+                else:
+                    assignee_name = "Unassigned"
+
+            logger.info(f"JiraAgent: issue created — {issue_key}, assigned to {assignee_name}")
+            return {
+                "status": "success",
+                "issue_key": issue_key,
+                "issue_url": f"{self.base_url}/browse/{issue_key}",
+                "assignee": assignee_name,
+                "team": details.get("team_label"),
+                "issue_type": issue_type,
+            }
 
         return {"status": "failed", "error": "Jira issue creation failed after retries"}
+
+    def _assign_issue(self, issue_key: str, assignee_account_id: str, assignee_name: str | None) -> bool:
+        """Assign an existing Jira issue to a user. Returns True on success.
+
+        If assignment fails, log the Jira response (status and body) and return False.
+        """
+        url = f"{self.base_url}/rest/api/3/issue/{issue_key}/assignee"
+        payload = {"accountId": assignee_account_id}
+        try:
+            resp = requests.put(url, json=payload, auth=self.auth, headers=self.headers, timeout=10)
+        except requests.RequestException as e:
+            logger.warning(f"JiraAgent: assignment network error for {issue_key} -> {e}")
+            return False
+
+        if not resp.ok:
+            logger.warning(
+                f"JiraAgent: assignment failed for {issue_key} -> status={resp.status_code} text={resp.text}"
+            )
+            return False
+
+        logger.info(f"JiraAgent: assigned {issue_key} to {assignee_name}")
+        return True
