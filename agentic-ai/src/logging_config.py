@@ -5,6 +5,7 @@ Centralised logging setup.
 - Rotating file handler for all logs  → logs/app.log
 - Rotating file handler for errors    → logs/errors.log
 - StreamHandler for stdout (preserved)
+- SanitizingFilter attached to root logger (scrubs secrets before any handler)
 Call setup_logging() once from main.py before anything else.
 """
 
@@ -14,6 +15,8 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from src.config import LOGS_DIR
+from src.log_sanitizer import install_sanitizer
+from src.log_sanitizer import SanitizingFilter
 
 APP_LOG  = LOGS_DIR / "app.log"
 ERR_LOG  = LOGS_DIR / "errors.log"
@@ -48,12 +51,18 @@ def setup_logging(level: int = logging.INFO) -> None:
     if root.handlers:
         return
 
+    # ── Sanitizer filter (must be first, before any handler is added) ─────────
+    install_sanitizer()
+
     formatter = TZFormatter(LOG_FORMAT, datefmt=DATE_FORMAT, tz=ZoneInfo("Asia/Kolkata"))
 
     # ── stdout ────────────────────────────────────────────────────────────────
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
     stdout_handler.setFormatter(formatter)
+    # Attach sanitizer to handlers explicitly so any handler-level formatting
+    # or handler-specific filters still receive sanitized text.
+    stdout_handler.addFilter(SanitizingFilter())
 
     # ── logs/app.log — INFO and above ─────────────────────────────────────────
     app_handler = RotatingFileHandler(
@@ -61,6 +70,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     )
     app_handler.setLevel(logging.INFO)
     app_handler.setFormatter(formatter)
+    app_handler.addFilter(SanitizingFilter())
 
     # ── logs/errors.log — WARNING and above ───────────────────────────────────
     err_handler = RotatingFileHandler(
@@ -68,6 +78,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     )
     err_handler.setLevel(logging.WARNING)
     err_handler.setFormatter(formatter)
+    err_handler.addFilter(SanitizingFilter())
 
     root.addHandler(stdout_handler)
     root.addHandler(app_handler)
