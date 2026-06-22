@@ -23,6 +23,9 @@
         Review Queue <span id="review-badge" class="badge"></span>
       </a>
       <a class="nav-link" onclick="showTab('clients', this)">Clients</a>
+      <a class="nav-link" onclick="showTab('monitor', this)">
+        Live Monitor <span id="monitor-live-dot" class="monitor-nav-dot"></span>
+      </a>
     </nav>
     <div class="stats-panel" id="stats-panel"></div>
     <div id="user-header" class="user-header"></div>
@@ -106,9 +109,53 @@
       <div id="client-list" class="card-list"></div>
     </section>
 
+    <!-- LIVE EXECUTION MONITOR TAB -->
+    <section id="tab-monitor" class="tab">
+      <div class="page-header">
+        <h1 class="page-title">Live Execution Monitor</h1>
+        <div class="toolbar">
+          <div class="monitor-status-row">
+            <span class="monitor-live-badge" id="monitor-connection-badge">
+              <span class="monitor-pulse-dot"></span> Live
+            </span>
+            <span id="monitor-event-count" class="monitor-count-label"></span>
+          </div>
+          <div class="filter-tabs" id="monitor-filter-tabs">
+            <button class="filter-btn active" onclick="setMonitorFilter('all', this)">All</button>
+            <button class="filter-btn" onclick="setMonitorFilter('running', this)">Running</button>
+            <button class="filter-btn" onclick="setMonitorFilter('success', this)">Success</button>
+            <button class="filter-btn" onclick="setMonitorFilter('failure', this)">Failure</button>
+          </div>
+          <button class="btn-monitor-clear" onclick="clearMonitorView()" title="Clear view (does not delete data)">
+            Clear View
+          </button>
+        </div>
+      </div>
+      <p class="subtitle">
+        Real-time structured execution events — grouped by email, updated automatically.
+      </p>
+
+      <!-- Email group filter pill -->
+      <div id="monitor-email-filter" style="display:none; margin-bottom:14px">
+        <span class="monitor-email-filter-pill">
+          Filtering: <strong id="monitor-filter-email-id"></strong>
+          <button onclick="clearEmailFilter()">✕</button>
+        </span>
+      </div>
+
+      <div id="monitor-groups" class="monitor-groups">
+        <div class="monitor-empty" id="monitor-empty-state">
+          <div class="monitor-empty-icon">⚡</div>
+          <p>Waiting for email processing events…</p>
+          <p class="monitor-empty-sub">Events will appear here automatically when emails are processed.</p>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <script src="/static/app.js"></script>
+  <script src="/static/monitor.js"></script>
   <script src="/static/nova.js"></script>
 </body>
 </html>

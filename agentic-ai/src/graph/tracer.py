@@ -3,22 +3,13 @@ tracer.py
 ---------
 Execution tracer for LangGraph nodes.
 
-Usage — wrap any node function or agent .run() method:
+Records per-node timing + success/failure in execution_traces table.
+Also emits structured events to execution_events table for the
+Live Execution Monitor page.
 
-    from src.graph.tracer import trace_node
-
-    def my_node(state: AgentState) -> AgentState:
-        with trace_node("my_node", state):
-            ... actual logic ...
-
-Or use the decorator form:
-
-    @traced("my_node")
-    def my_node(state: AgentState) -> AgentState:
-        ...
-
-Records: node_name, start_time, end_time, duration_ms, success,
-         exception_message — persisted to execution_traces table.
+Usage:
+    with trace_node("my_node", state):
+        ... actual logic ...
 """
 
 import logging
@@ -29,6 +20,9 @@ from src.database.db import SessionLocal, save_execution_trace
 
 logger = logging.getLogger(__name__)
 
+# Nodes that are purely infrastructure — emit at DEBUG level, still tracked
+_INFRA_NODES = {"audit_log", "notification"}
+
 
 def _get_email_id(state: dict) -> str | None:
     email = state.get("current_email") or {}
@@ -38,13 +32,22 @@ def _get_email_id(state: dict) -> str | None:
 @contextmanager
 def trace_node(node_name: str, state: dict):
     """
-    Context manager that records start/end time and success/failure
-    for a LangGraph node into the execution_traces table.
+    Context manager that:
+      1. Records start/end/duration/success in execution_traces table
+      2. Emits node_started / node_completed / node_failed to execution_events
     """
     email_id   = _get_email_id(state)
     start_time = datetime.now(timezone.utc)
     exc_msg    = None
     success    = True
+
+    # ── Emit node_started (skip infra nodes to keep monitor clean) ────────────
+    if node_name not in _INFRA_NODES:
+        try:
+            from src.monitor import emit_node_started
+            emit_node_started(email_id, node_name)
+        except Exception:
+            pass
 
     try:
         yield
@@ -64,6 +67,7 @@ def trace_node(node_name: str, state: dict):
             f"duration={duration_ms:.0f}ms"
         )
 
+        # ── Persist to execution_traces ───────────────────────────────────────
         try:
             db = SessionLocal()
             try:
@@ -79,23 +83,17 @@ def trace_node(node_name: str, state: dict):
             finally:
                 db.close()
         except Exception as db_exc:
-            # Never let tracing failures crash the graph
             logger.warning(f"Tracer: failed to persist trace for {node_name} — {db_exc}")
 
-
-def make_traced(node_name: str):
-    """
-    Decorator factory that wraps a node function with trace_node.
-
-    Example:
-        @make_traced("email_processor")
-        def email_processor_node(state):
-            ...
-    """
-    def decorator(fn):
-        def wrapper(state):
-            with trace_node(node_name, state):
-                return fn(state)
-        wrapper.__name__ = fn.__name__
-        return wrapper
-    return decorator
+        # ── Emit to execution_events (monitor) ────────────────────────────────
+        if node_name not in _INFRA_NODES:
+            try:
+                if success:
+                    from src.monitor import emit_node_completed
+                    emit_node_completed(email_id, node_name, round(duration_ms, 2))
+                else:
+                    from src.monitor import emit_node_failed
+                    emit_node_failed(email_id, node_name, round(duration_ms, 2),
+                                     exc_msg or "unknown error")
+            except Exception:
+                pass

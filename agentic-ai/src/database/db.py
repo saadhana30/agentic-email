@@ -4,16 +4,17 @@ db.py
 Database models and helper functions.
 
 Tables:
-  emails           — email records with thread metadata
-  analysis         — LLM analysis results
-  actions          — agent actions taken
-  review_queue     — low-confidence emails awaiting human review
-  notifications    — in-app notifications
-  clients          — registered client domains → Jira project keys
-  email_threads    — thread metadata (thread_id, message chain)
-  attachments      — per-attachment extracted text (multi-attachment support)
-  execution_traces — per-node LangGraph execution timing and status
-  users            — authentication users
+  emails             — email records with thread metadata
+  analysis           — LLM analysis results
+  actions            — agent actions taken
+  review_queue       — low-confidence emails awaiting human review
+  notifications      — in-app notifications
+  clients            — registered client domains → Jira project keys
+  email_threads      — thread metadata (thread_id, message chain)
+  attachments        — per-attachment extracted text (multi-attachment support)
+  execution_traces   — per-node LangGraph execution timing and status
+  users              — authentication users
+  execution_events   — structured execution monitor events (Live Monitor page)
 """
 
 import json
@@ -350,3 +351,104 @@ def create_user(db, username: str, email: str, hashed_password: str, role: str =
     db.commit()
     db.refresh(user)
     return user
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXECUTION EVENT MODEL  (Live Execution Monitor)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ExecutionEvent(Base):
+    """
+    Structured execution events for the Live Execution Monitor page.
+    One row per meaningful step in email processing.
+    NOT raw terminal logs — human-readable operational events only.
+    """
+    __tablename__ = "execution_events"
+
+    id          = Column(Integer,  primary_key=True, autoincrement=True)
+    email_id    = Column(String,   nullable=True,  index=True)
+    timestamp   = Column(DateTime, nullable=False,
+                         default=lambda: datetime.now(timezone.utc), index=True)
+    event_type  = Column(String,   nullable=False)   # see EVENT_TYPES below
+    agent_name  = Column(String,   nullable=True)    # node / agent that produced this event
+    status      = Column(String,   nullable=False, default="info")
+    # info | running | success | failure
+    message     = Column(Text,     nullable=False)
+    duration_ms = Column(Float,    nullable=True)    # populated for node-complete events
+    meta        = Column(Text,     nullable=True)    # JSON — optional extra structured data
+
+
+# Allowed event_type values — used by frontend for icons and filters
+EVENT_TYPES = {
+    "email_detected",
+    "attachment_extracted",
+    "node_started",
+    "node_completed",
+    "node_failed",
+    "spam_detected",
+    "routing_decision",
+    "agent_invoked",
+    "jira_ticket_created",
+    "calendar_event_created",
+    "reply_sent",
+    "review_queued",
+    "processing_completed",
+    "processing_failed",
+}
+
+
+def emit_event(
+    email_id: str | None,
+    event_type: str,
+    message: str,
+    agent_name: str | None = None,
+    status: str = "info",
+    duration_ms: float | None = None,
+    meta: dict | None = None,
+) -> None:
+    """
+    Persist a structured execution event.
+    Never raises — silently skips on any DB error so
+    event emission never interrupts the processing pipeline.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            record = ExecutionEvent(
+                email_id    = email_id,
+                event_type  = event_type,
+                agent_name  = agent_name,
+                status      = status,
+                message     = message,
+                duration_ms = duration_ms,
+                meta        = json.dumps(meta) if meta else None,
+            )
+            db.add(record)
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        pass   # event emission must never crash the pipeline
+
+
+def get_recent_events(db, limit: int = 200) -> list:
+    """Return the latest `limit` events ordered oldest-first for display."""
+    rows = (
+        db.query(ExecutionEvent)
+        .order_by(ExecutionEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return list(reversed(rows))   # oldest first within the window
+
+
+def get_events_since(db, last_id: int, limit: int = 100) -> list:
+    """Return events with id > last_id for SSE streaming."""
+    return (
+        db.query(ExecutionEvent)
+        .filter(ExecutionEvent.id > last_id)
+        .order_by(ExecutionEvent.id.asc())
+        .limit(limit)
+        .all()
+    )
+

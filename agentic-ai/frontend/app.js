@@ -121,6 +121,7 @@ function showTab(name, el) {
   if (name === "executed") loadExecuted();
   if (name === "review")   loadReviewQueue();
   if (name === "clients")  loadClients();
+  if (name === "monitor")  { if (typeof initMonitor === "function") initMonitor(); }
 }
 
 // ── Inbox filter ──────────────────────────────────────────────────────────────

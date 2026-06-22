@@ -32,8 +32,9 @@ from src.database.db import (
     get_db, init_db, update_review_status, get_pending_review,
     SessionLocal, NotificationRecord, ReviewQueueRecord,
     EmailRecord, AnalysisRecord, ActionRecord, ClientRecord,
-    ExecutionTrace, AttachmentRecord,
+    ExecutionTrace, AttachmentRecord, ExecutionEvent,
     add_notification, get_traces_for_email, get_attachments_for_email,
+    get_recent_events, get_events_since,
     create_user, get_user_by_username,
 )
 from src.graph.workflow import run_graph_for_email
@@ -707,6 +708,96 @@ def nova_clear_history(
     scoped_id = f"{_user.id}:{session_id}"
     _nova.clear_history(scoped_id)
     return {"status": "cleared", "session_id": session_id}
+
+
+# ── Live Execution Monitor ────────────────────────────────────────────────────
+
+from zoneinfo import ZoneInfo as _ZoneInfo
+_IST = _ZoneInfo("Asia/Kolkata")
+
+
+def _to_ist_iso(dt) -> str | None:
+    """
+    Convert a datetime to Asia/Kolkata and return an ISO-8601 string
+    that includes the +05:30 offset.  Returns None if dt is None.
+    The offset in the string is what tells the browser the exact wall-clock
+    time — no browser-timezone dependency.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        # Treat naive datetimes (stored as UTC) as UTC before converting
+        from datetime import timezone as _tz
+        dt = dt.replace(tzinfo=_tz.utc)
+    return dt.astimezone(_IST).isoformat()
+
+
+def _event_to_dict(e: ExecutionEvent) -> dict:
+    """Serialize an ExecutionEvent row to a JSON-safe dict.
+    Timestamps are always returned in Asia/Kolkata (IST, +05:30)."""
+    return {
+        "id":          e.id,
+        "email_id":    e.email_id,
+        "timestamp":   _to_ist_iso(e.timestamp),
+        "event_type":  e.event_type,
+        "agent_name":  e.agent_name,
+        "status":      e.status,
+        "message":     e.message,
+        "duration_ms": e.duration_ms,
+        "meta":        json.loads(e.meta) if e.meta else None,
+    }
+
+
+@app.get("/api/monitor/events")
+def get_monitor_events(
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """Return the latest events for the Live Execution Monitor (initial load)."""
+    events = get_recent_events(db, limit=min(limit, 200))
+    return [_event_to_dict(e) for e in events]
+
+
+@app.get("/api/monitor/events/stream")
+async def stream_monitor_events(token: str = ""):
+    """
+    SSE stream for the Live Execution Monitor.
+    Delivers new execution_events rows as they are written.
+    Frontend passes ?token=<jwt> since EventSource cannot set headers.
+    """
+    try:
+        decode_token(token)
+    except HTTPException:
+        async def _empty():
+            return
+        return EventSourceResponse(_empty())
+
+    async def _generator():
+        # Start from the current latest id so we only stream NEW events
+        db2 = SessionLocal()
+        try:
+            last_row = (
+                db2.query(ExecutionEvent)
+                .order_by(ExecutionEvent.id.desc())
+                .first()
+            )
+            last_id = last_row.id if last_row else 0
+        finally:
+            db2.close()
+
+        while True:
+            await asyncio.sleep(1.5)
+            db3 = SessionLocal()
+            try:
+                new_events = get_events_since(db3, last_id, limit=50)
+                for ev in new_events:
+                    last_id = ev.id
+                    yield {"data": json.dumps(_event_to_dict(ev))}
+            finally:
+                db3.close()
+
+    return EventSourceResponse(_generator())
 
 
 # ── Reclassify existing emails ────────────────────────────────────────────────
