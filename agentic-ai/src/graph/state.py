@@ -13,9 +13,19 @@ class AgentState(TypedDict):
     #   raw_content, processed_content, attachment_type,
     #   attachments (list of {filename, mime_type, attachment_type, extracted_text})
 
-    # ── Thread awareness (Feature 1) ──────────────────────────────────────────
+    # ── Thread awareness ──────────────────────────────────────────────────────
     is_thread_reply: bool          # True when this email is a reply in an existing thread
     thread_history: list           # List of previous messages in the thread (for LLM context)
+
+    # thread_context holds resolved artefacts found in previous thread turns.
+    # Populated by spam_classifier_node when is_thread_reply=True.
+    # Consumed by JiraAgent, CalendarAgent, ReplyAgent.
+    # Keys (all optional):
+    #   existing_jira_key  : str   — issue key from a previous turn (e.g. "PROJ-42")
+    #   existing_event_id  : str   — Google Calendar event id from a previous turn
+    #   existing_event_slot: str   — human-readable slot string from a previous turn
+    #   conversation_summary: str  — plain-text summary injected into ReplyAgent prompt
+    thread_context: dict
 
     # ── Spam / client classification ──────────────────────────────────────────
     is_spam: bool

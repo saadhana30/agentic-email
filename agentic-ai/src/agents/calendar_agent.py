@@ -66,18 +66,38 @@ class CalendarAgent:
         if "calendar_agent" not in state.get("next_agents", []):
             return state
 
-        email = state.get("current_email", {})
-        analysis = state.get("analysis", {})
-        client_name = state.get("client_name") or email.get("sender", "Client")
+        email        = state.get("current_email", {})
+        analysis     = state.get("analysis", {})
+        client_name  = state.get("client_name") or email.get("sender", "Client")
+        thread_context = state.get("thread_context", {})
 
         logger.info(f"CalendarAgent INVOKED for email from {email.get('sender')}")
 
-        # STEP 1: LLM extracts scheduling preferences
+        # ── Thread-awareness: update existing event instead of creating new ──
+        existing_event_id = thread_context.get("existing_event_id")
+        category          = analysis.get("category", "")
+
+        if existing_event_id and category == "meeting_reschedule":
+            logger.info(
+                f"CalendarAgent: reschedule request — updating event {existing_event_id}"
+            )
+            preferences = self._reason_about_scheduling(email, analysis)
+            new_slot    = self._find_slot(preferences)
+            result      = self._update_event(existing_event_id, new_slot, client_name,
+                                              email, preferences)
+            actions = state.get("actions_taken", [])
+            actions.append({"agent": "calendar_agent", "result": result})
+            state["actions_taken"] = actions
+            if result.get("rescheduled"):
+                state["calendar_rescheduled"] = True
+                state["proposed_slot"] = new_slot.isoformat() if new_slot else None
+            return state
+
+        # ── Normal flow: create new event ────────────────────────────────────
         preferences = self._reason_about_scheduling(email, analysis)
         logger.info(f"CalendarAgent LLM decision: {preferences}")
 
-        # STEP 2: Find available slot and create event
-        slot = self._find_slot(preferences)
+        slot   = self._find_slot(preferences)
         result = self._create_event(slot, client_name, email, preferences)
 
         actions = state.get("actions_taken", [])
@@ -202,3 +222,53 @@ class CalendarAgent:
                     time.sleep(RETRY_DELAY_SECONDS)
 
         return {"status": "failed", "error": "Calendar event creation failed after retries"}
+
+    def _update_event(
+        self,
+        event_id: str,
+        new_slot: datetime,
+        client_name: str,
+        email: dict,
+        preferences: dict,
+    ) -> dict:
+        """
+        Update an existing Google Calendar event to a new time slot.
+        Used when a thread reply indicates the client wants to reschedule.
+        """
+        duration = preferences.get("duration_minutes", MEETING_DURATION_MINS)
+        patch_body = {
+            "start": {"dateTime": new_slot.isoformat(), "timeZone": CALENDAR_TIMEZONE},
+            "end":   {
+                "dateTime": (new_slot + timedelta(minutes=duration)).isoformat(),
+                "timeZone": CALENDAR_TIMEZONE,
+            },
+            "description": (
+                f"Rescheduled by NovaSphere Agent\n"
+                f"Client: {client_name}\n"
+                f"Reschedule request: {email.get('subject', '')}\n"
+                f"{preferences.get('notes', '')}"
+            ),
+        }
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                updated = self._get_service().events().patch(
+                    calendarId="primary",
+                    eventId=event_id,
+                    body=patch_body,
+                    sendUpdates="all",
+                ).execute()
+                logger.info(f"CalendarAgent: event {event_id} rescheduled to {new_slot}")
+                return {
+                    "status":     "success",
+                    "event_id":   updated.get("id"),
+                    "event_link": updated.get("htmlLink"),
+                    "slot":       format_datetime_ist(new_slot, "%d %b %Y %I:%M %p %Z"),
+                    "rescheduled": True,
+                    "action":     "event_updated",
+                }
+            except Exception as e:
+                logger.warning(f"CalendarAgent: update attempt {attempt + 1} failed — {e}")
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY_SECONDS)
+
+        return {"status": "failed", "error": "Calendar event update failed after retries"}

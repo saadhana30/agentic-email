@@ -73,6 +73,7 @@ class JiraAgent:
         email = state.get("current_email", {})
         analysis = state.get("analysis", {})
         jira_project_key = state.get("jira_project_key")
+        thread_context   = state.get("thread_context", {})
 
         if not jira_project_key:
             logger.warning("JiraAgent: no jira_project_key — email is not from a known client")
@@ -82,6 +83,23 @@ class JiraAgent:
                 "reason": "No Jira project key — sender is not a registered client"
             }})
             state["actions_taken"] = actions
+            return state
+
+        # ── Thread-awareness: update existing ticket instead of creating a new one ──
+        existing_key = thread_context.get("existing_jira_key")
+        category     = analysis.get("category", "")
+
+        if existing_key and category in ("jira_update", "follow_up", "status_enquiry",
+                                          "acknowledgement", "complaint"):
+            logger.info(
+                f"JiraAgent: thread reply — adding comment to existing ticket {existing_key}"
+            )
+            result = self._add_comment(existing_key, email, analysis)
+            actions = state.get("actions_taken", [])
+            actions.append({"agent": "jira_agent", "result": result})
+            state["actions_taken"] = actions
+            if result.get("status") == "success":
+                state["jira_issue_key"] = existing_key
             return state
 
         logger.info(f"JiraAgent INVOKED for email from {email.get('sender')} → project {jira_project_key}")
@@ -282,3 +300,51 @@ class JiraAgent:
 
         logger.info(f"JiraAgent: assigned {issue_key} to {assignee_name}")
         return True
+
+    def _add_comment(self, issue_key: str, email: dict, analysis: dict) -> dict:
+        """
+        Add a comment to an existing Jira issue with the latest email content.
+        Used when a thread reply relates to a previously created ticket.
+        """
+        body_text = (
+            f"Client follow-up received.\n\n"
+            f"From: {email.get('sender', '')}\n"
+            f"Subject: {email.get('subject', '')}\n"
+            f"Intent: {analysis.get('intent', '')}\n\n"
+            f"Message:\n{email.get('processed_content', '')[:1000]}"
+        )
+        payload = {
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": body_text}],
+                    }
+                ],
+            }
+        }
+        url = f"{self.base_url}/rest/api/3/issue/{issue_key}/comment"
+        try:
+            resp = requests.post(
+                url, json=payload,
+                auth=self.auth, headers=self.headers, timeout=10
+            )
+            if resp.ok:
+                logger.info(f"JiraAgent: comment added to {issue_key}")
+                return {
+                    "status":    "success",
+                    "issue_key": issue_key,
+                    "issue_url": f"{self.base_url}/browse/{issue_key}",
+                    "action":    "comment_added",
+                }
+            else:
+                logger.warning(
+                    f"JiraAgent: comment failed for {issue_key} — "
+                    f"status={resp.status_code}"
+                )
+                return {"status": "failed", "error": f"comment failed: {resp.status_code}"}
+        except Exception as e:
+            logger.error(f"JiraAgent: comment exception for {issue_key} — {e}")
+            return {"status": "failed", "error": str(e)}

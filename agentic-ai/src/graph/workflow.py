@@ -91,20 +91,71 @@ def _email_processor(state: AgentState) -> AgentState:
 def _spam_classifier(state: AgentState) -> AgentState:
     with trace_node("spam_classifier", state):
         result = spam_classifier_node(state)
+
+    email  = result.get("current_email") or {}
+    eid    = _email_id(result)
+
+    # Existing: spam detected event
     if result.get("is_spam"):
         _safe_emit(
             lambda: __import__("src.monitor", fromlist=["emit_spam_detected"])
-            .emit_spam_detected(
-                _email_id(result),
-                (result.get("current_email") or {}).get("sender", "unknown"),
+            .emit_spam_detected(eid, email.get("sender", "unknown"))
+        )
+        return result
+
+    # New: thread reply detected — fires only if spam_classifier found an existing thread
+    if result.get("is_thread_reply"):
+        thread_id    = email.get("thread_id", "")
+        history      = result.get("thread_history", [])
+        ctx          = result.get("thread_context", {})
+
+        _safe_emit(
+            lambda t=thread_id, c=len(history): (
+                __import__("src.monitor", fromlist=["emit_thread_reply_detected"])
+                .emit_thread_reply_detected(eid, t, c)
             )
         )
+
+        # New: thread history loaded — fires only when history was actually populated
+        if history:
+            _safe_emit(
+                lambda c=len(history), jk=ctx.get("existing_jira_key"), ev=ctx.get("existing_event_id"): (
+                    __import__("src.monitor", fromlist=["emit_thread_history_loaded"])
+                    .emit_thread_history_loaded(eid, c, jk, ev)
+                )
+            )
+
     return result
 
 
 def _llm_analysis(state: AgentState) -> AgentState:
     with trace_node("llm_analysis", state):
-        return email_analysis_agent.run(state)
+        result = email_analysis_agent.run(state)
+
+    # New: conversation_context_applied — fires when thread history was used
+    if result.get("is_thread_reply") and result.get("thread_history"):
+        analysis  = result.get("analysis") or {}
+        category  = analysis.get("category", "unknown")
+        ctx       = result.get("thread_context", {})
+        jira_key  = ctx.get("existing_jira_key")
+        event_id  = ctx.get("existing_event_id")
+
+        parts = []
+        if jira_key:
+            parts.append(f"referenced ticket {jira_key}")
+        if event_id:
+            parts.append("referenced calendar event")
+        if not parts:
+            parts.append("history injected into prompt")
+
+        _safe_emit(
+            lambda cat=category, note=", ".join(parts): (
+                __import__("src.monitor", fromlist=["emit_conversation_context_applied"])
+                .emit_conversation_context_applied(_email_id(result), cat, note)
+            )
+        )
+
+    return result
 
 
 def _supervisor(state: AgentState) -> AgentState:
@@ -420,6 +471,7 @@ def run_graph_for_email(email: dict) -> AgentState:
         "current_email":        email,
         "is_thread_reply":      False,
         "thread_history":       [],
+        "thread_context":       {},
         "is_spam":              False,
         "email_source":         "",
         "client_name":          None,

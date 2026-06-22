@@ -272,3 +272,74 @@ def emit_processing_failed(email_id: str, error: str) -> None:
         message    = "Processing failed — email moved to review queue",
         meta       = {"error": _safe(error[:200])},
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Thread-awareness monitor events
+# ─────────────────────────────────────────────────────────────────────────────
+
+def emit_thread_reply_detected(
+    email_id: str,
+    thread_id: str,
+    prior_message_count: int,
+) -> None:
+    emit_event(
+        email_id   = email_id,
+        event_type = "thread_reply_detected",
+        agent_name = "spam_classifier",
+        status     = "info",
+        message    = (
+            f"Thread reply detected — thread_id={_safe(thread_id[:16])}… "
+            f"({prior_message_count} prior message(s) in thread)"
+        ),
+        meta = {
+            "thread_id":           _safe(thread_id),
+            "prior_message_count": prior_message_count,
+        },
+    )
+
+
+def emit_thread_history_loaded(
+    email_id: str,
+    message_count: int,
+    existing_jira_key: str | None,
+    existing_event_id: str | None,
+) -> None:
+    parts = [f"{message_count} prior message(s) loaded"]
+    if existing_jira_key:
+        parts.append(f"existing Jira ticket: {_safe(existing_jira_key)}")
+    if existing_event_id:
+        parts.append("existing calendar event found")
+    emit_event(
+        email_id   = email_id,
+        event_type = "thread_history_loaded",
+        agent_name = "spam_classifier",
+        status     = "success",
+        message    = "Thread history loaded — " + ", ".join(parts),
+        meta = {
+            "message_count":     message_count,
+            "existing_jira_key": _safe(existing_jira_key or ""),
+            "has_calendar":      existing_event_id is not None,
+        },
+    )
+
+
+def emit_conversation_context_applied(
+    email_id: str,
+    category: str,
+    context_note: str,
+) -> None:
+    emit_event(
+        email_id   = email_id,
+        event_type = "conversation_context_applied",
+        agent_name = "llm_analysis",
+        status     = "info",
+        message    = (
+            f"Conversation context applied — "
+            f"category={_safe(category)}, {_safe(context_note)}"
+        ),
+        meta = {
+            "category":     _safe(category),
+            "context_note": _safe(context_note),
+        },
+    )

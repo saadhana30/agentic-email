@@ -30,13 +30,17 @@ From: {sender}
 Subject: {subject}
 Body: {body}
 
+{conversation_section}
+
 Actions taken:
 {actions_summary}
 
-Write a concise, professional reply email. 
+Write a concise, professional reply email.
 - Thank the client for reaching out
 - Confirm what actions were taken
 - If a meeting was rescheduled, mention the new proposed time
+- If this is a follow-up in an ongoing conversation, acknowledge the previous discussion naturally
+- If the client said thanks or just acknowledged, keep the reply brief and warm
 - Keep it under 150 words
 - Do NOT include subject line, just the body text
 """
@@ -65,7 +69,7 @@ class ReplyAgent:
         actions_taken = state.get("actions_taken", [])
 
         actions_summary = self._build_actions_summary(state, actions_taken)
-        reply_body = self._generate_reply(email, actions_summary)
+        reply_body = self._generate_reply(email, actions_summary, state)
         result = self._send_reply(email, reply_body)
 
         actions = state.get("actions_taken", [])
@@ -107,12 +111,24 @@ class ReplyAgent:
 
         return "\n".join(parts)
 
-    def _generate_reply(self, email: dict, actions_summary: str) -> str:
+    def _generate_reply(self, email: dict, actions_summary: str, state: AgentState) -> str:
+        # Build conversation section from thread_context summary if available
+        thread_context = state.get("thread_context", {})
+        conversation_summary = thread_context.get("conversation_summary", "")
+        if conversation_summary:
+            conversation_section = (
+                "Conversation history (for context only — do not repeat verbatim):\n"
+                + conversation_summary
+            )
+        else:
+            conversation_section = ""
+
         prompt = REPLY_PROMPT.format(
-            sender=email.get("sender", ""),
-            subject=email.get("subject", ""),
-            body=email.get("processed_content", "")[:500],
-            actions_summary=actions_summary,
+            sender               = email.get("sender", ""),
+            subject              = email.get("subject", ""),
+            body                 = email.get("processed_content", "")[:500],
+            conversation_section = conversation_section,
+            actions_summary      = actions_summary,
         )
         try:
             return call_ollama(prompt, temperature=0.4)

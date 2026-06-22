@@ -293,6 +293,62 @@ def get_thread_emails(db, thread_id: str, exclude_message_id: str | None = None)
     return query.order_by(EmailRecord.received_at.asc()).all()
 
 
+def get_thread_prior_actions(db, thread_id: str, current_email_id: str) -> dict:
+    """
+    Scan all previous emails in a thread and return the most recent
+    Jira issue key and Calendar event id/slot found in their action records.
+
+    Returns a dict with keys (all may be None if not found):
+        existing_jira_key   : str | None
+        existing_event_id   : str | None
+        existing_event_slot : str | None
+    """
+    result = {
+        "existing_jira_key":   None,
+        "existing_event_id":   None,
+        "existing_event_slot": None,
+    }
+
+    prior_emails = get_thread_emails(db, thread_id, exclude_message_id=current_email_id)
+    if not prior_emails:
+        return result
+
+    prior_ids = [e.id for e in prior_emails]
+
+    # Fetch all successful actions for those emails, newest first
+    actions = (
+        db.query(ActionRecord)
+        .filter(
+            ActionRecord.email_id.in_(prior_ids),
+            ActionRecord.status == "success",
+        )
+        .order_by(ActionRecord.timestamp.desc())
+        .all()
+    )
+
+    import json as _j
+    for a in actions:
+        try:
+            data = _j.loads(a.action_taken or "{}")
+        except Exception:
+            continue
+
+        if a.agent_name == "jira_agent" and data.get("issue_key"):
+            if result["existing_jira_key"] is None:
+                result["existing_jira_key"] = data["issue_key"]
+
+        if a.agent_name == "calendar_agent" and data.get("event_id"):
+            if result["existing_event_id"] is None:
+                result["existing_event_id"]   = data["event_id"]
+                result["existing_event_slot"]  = data.get("slot", "")
+
+        # Stop early once both are found
+        if result["existing_jira_key"] and result["existing_event_id"]:
+            break
+
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ATTACHMENT HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
