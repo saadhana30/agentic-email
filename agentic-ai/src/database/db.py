@@ -18,7 +18,7 @@ Tables:
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import (
     create_engine, Column, String, Float, Boolean,
@@ -193,6 +193,42 @@ def get_db():
 
 def is_duplicate_email(db, message_id: str) -> bool:
     return db.query(EmailRecord).filter(EmailRecord.id == message_id).first() is not None
+
+
+def is_duplicate_recent_email(
+    db,
+    sender: str,
+    subject: str,
+    content: str,
+    received_at: datetime | None,
+    window_minutes: int = 10,
+) -> bool:
+    """
+    Return True if an email exists with the same sender, subject and content
+    and was received within the last `window_minutes` minutes of `received_at`.
+    This is an exact-match guard (no semantic similarity).
+    """
+    if not received_at:
+        return False
+    try:
+        earliest = received_at - timedelta(minutes=window_minutes)
+        sender = sender or ""
+        subject = subject or ""
+        content = content or ""
+        existing = (
+            db.query(EmailRecord)
+            .filter(
+                EmailRecord.sender == sender,
+                EmailRecord.subject == subject,
+                EmailRecord.raw_content == content,
+                EmailRecord.received_at >= earliest,
+            )
+            .first()
+        )
+        return existing is not None
+    except Exception:
+        # On any DB error, be conservative and do not treat as duplicate.
+        return False
 
 
 def get_client_by_domain(db, domain: str):

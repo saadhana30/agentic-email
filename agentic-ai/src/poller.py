@@ -22,7 +22,13 @@ import time
 import logging
 from src.config import POLL_INTERVAL_SECONDS
 from src.agents.email_monitoring_agent import EmailMonitoringAgent
-from src.database.db import SessionLocal, is_duplicate_email, save_email
+from src.database.db import (
+    SessionLocal,
+    is_duplicate_email,
+    is_duplicate_recent_email,
+    save_email,
+    emit_event,
+)
 from src.graph.workflow import run_graph_for_email
 
 logger = logging.getLogger(__name__)
@@ -98,11 +104,46 @@ def run_poller():
                 logger.info(f"Poller: {len(new_emails)} new email(s) detected")
 
             for email in new_emails:
-                logger.info(
-                    f"Poller: invoking graph for email "
-                    f"[{email.get('message_id')}] from {email.get('sender')}"
-                )
                 try:
+                    # Thread replies must always be processed normally
+                    if not email.get("in_reply_to"):
+                        db = SessionLocal()
+                        try:
+                            content = email.get("processed_content") or email.get("raw_content", "")
+                            if is_duplicate_recent_email(
+                                db,
+                                sender=email.get("sender", ""),
+                                subject=email.get("subject", ""),
+                                content=content,
+                                received_at=email.get("received_at"),
+                                window_minutes=10,
+                            ):
+                                logger.info("Duplicate email detected")
+                                # Emit a structured execution event for the Live Monitor UI
+                                try:
+                                    emit_event(
+                                        email.get("message_id"),
+                                        "duplicate_email_detected",
+                                        "Duplicate email detected — processing skipped",
+                                        agent_name=None,
+                                        status="info",
+                                        meta={
+                                            "sender": email.get("sender", ""),
+                                            "subject": email.get("subject", ""),
+                                        },
+                                    )
+                                except Exception:
+                                    # emit_event is resilient, but don't let failures block polling
+                                    logger.exception("Failed to emit duplicate_email_detected event")
+                                monitor.mark_as_read(email["message_id"])
+                                continue
+                        finally:
+                            db.close()
+
+                    logger.info(
+                        f"Poller: invoking graph for email "
+                        f"[{email.get('message_id')}] from {email.get('sender')}"
+                    )
                     final_state = run_graph_for_email(email)
                     monitor.mark_as_read(email["message_id"])
                     logger.info(

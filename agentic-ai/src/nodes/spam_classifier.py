@@ -51,7 +51,7 @@ def spam_classifier_node(state: AgentState) -> AgentState:
     """
     email = state.get("current_email", {})
     if not email:
-        state["is_spam"]        = True
+        state["is_spam"]         = True
         state["is_thread_reply"] = False
         state["thread_history"]  = []
         state["thread_context"]  = {}
