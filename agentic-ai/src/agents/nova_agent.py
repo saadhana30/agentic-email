@@ -118,7 +118,7 @@ class NovaAgent:
         except OllamaRetryExhausted:
             answer = (
                 "I'm unable to reach the AI model right now. "
-                "Please check that Ollama is running (`ollama serve`) and try again."
+                "Please check that your GROQ_API_KEY is set and Groq is reachable, then try again."
             )
         except Exception as e:
             logger.error(f"NovaAgent: unexpected error — {e}")
