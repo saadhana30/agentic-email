@@ -85,6 +85,52 @@ Rules:
 - If thread context shows an existing Jira ticket, reference it by key in execution_plan
 - If thread context shows an existing calendar event, reference it in execution_plan
 - Return ONLY valid JSON, nothing else
+
+IMPORTANT THREAD RULES:
+
+- Never classify an email as acknowledgement if it contains ANY new request.
+
+- A reply email can still request a meeting, create a Jira task, ask for status, or request work.
+
+- If the email contains words such as:
+  schedule,
+  meeting,
+  tomorrow,
+  today,
+  Monday,
+  Tuesday,
+  Wednesday,
+  Thursday,
+  Friday,
+  Saturday,
+  Sunday,
+  AM,
+  PM,
+  calendar,
+  review meeting
+
+  classify it as meeting_request unless the sender is explicitly changing an existing meeting.
+
+- If the email both requests a meeting and requests work, include BOTH:
+  calendar_agent
+  jira_agent
+
+- Thread replies MUST be classified from the CONTENT of the latest email, not merely because they are replies.
+
+- acknowledgement means ONLY:
+  thanks,
+  thank you,
+  okay,
+  ok,
+  noted,
+  received,
+  understood,
+  sounds good,
+  great,
+  perfect,
+  appreciate it
+
+  AND absolutely NO new request exists.
 """
 
 
