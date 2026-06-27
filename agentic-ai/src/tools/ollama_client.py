@@ -36,31 +36,47 @@ def _call_groq(prompt: str, temperature: float, model: str, api_key: str) -> str
     Returns the assistant message text.
     Raises requests.HTTPError, Timeout, ConnectionError, or ValueError on failure.
     """
-    import requests  # imported here so the module loads even if requests is absent
+    import requests
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
         "temperature": temperature,
         "stream": False,
     }
+
     response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers=headers,
         json=payload,
         timeout=60,
     )
+
+    if not response.ok:
+        logger.error(
+            f"Groq API Error {response.status_code}: {response.text}"
+        )
+
     response.raise_for_status()
+
     data = response.json()
+
     text = data["choices"][0]["message"]["content"].strip()
+
     if not text:
         raise ValueError("Groq returned an empty response")
-    return text
 
+    return text
 
 def _call_ollama(prompt: str, temperature: float, base_url: str, model: str) -> str:
     """
