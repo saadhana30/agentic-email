@@ -67,6 +67,15 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 
+# ── Public health check (no authentication required) ─────────────────────────
+# Railway calls this endpoint to verify the service is alive.
+# Must return HTTP 200 with no auth so the health check never fails.
+
+@app.get("/health", include_in_schema=False)
+def health_check():
+    return {"status": "ok"}
+
+
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class ReviewAction(BaseModel):
