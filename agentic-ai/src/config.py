@@ -68,7 +68,7 @@ JIRA_API_TOKEN  = os.getenv("JIRA_API_TOKEN")
 # ── LLM backend ───────────────────────────────────────────────────────────────
 # Groq (production / Railway) — set GROQ_API_KEY to activate
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
 # Ollama (local fallback — used when GROQ_API_KEY is not set)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
